@@ -53,6 +53,7 @@ fn part_2(input: []const u8, start: i32) !usize {
 
     while (lines.next()) |line| {
         if (line.len == 0) continue;
+
         const rotation = try Rotation.from_line(line);
         if (rotation.dir == 'R') {
             const cycles = @divFloor(current + rotation.times, 100);
