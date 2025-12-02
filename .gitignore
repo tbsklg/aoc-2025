@@ -1,0 +1,10 @@
+/.zig-cache/
+/zig-out/
+/answers/
+/patches/healed/
+/output/
+.progress.txt
+
+/zig-cache/
+
+input.txt
