@@ -12,16 +12,17 @@ pub fn main() !void {
     );
     defer allocator.free(file_contents);
 
-    const sol_1 = try part_1(file_contents);
+    const trimmed = std.mem.trim(u8, file_contents, " \t\r\n");
+
+    const sol_1 = try part_1(trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
 
-    const sol_2 = try part_2(file_contents);
+    const sol_2 = try part_2(trimmed);
     std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
-fn part_1(input: []u8) !usize {
-    const trimmed = std.mem.trim(u8, input, " \t\r\n");
-    var lines = std.mem.splitScalar(u8, trimmed, ',');
+fn part_1(input: []const u8) !usize {
+    var lines = std.mem.splitScalar(u8, input, ',');
 
     var invalid: usize = 0;
     while (lines.next()) |line| {
@@ -39,9 +40,8 @@ fn part_1(input: []u8) !usize {
     return invalid;
 }
 
-fn part_2(input: []u8) !usize {
-    const trimmed = std.mem.trim(u8, input, " \t\r\n");
-    var lines = std.mem.splitScalar(u8, trimmed, ',');
+fn part_2(input: []const u8) !usize {
+    var lines = std.mem.splitScalar(u8, input, ',');
 
     var invalid: usize = 0;
     while (lines.next()) |line| {
@@ -76,9 +76,7 @@ const Range = struct {
 };
 
 fn parse_invalid_id(id: usize) ?usize {
-    var buffer: [4096]u8 = undefined;
-    const result = std.fmt.bufPrintZ(buffer[0..], "{d}", .{id}) catch unreachable;
-    const id_str = @as([]const u8, result);
+    const id_str = as_u8(id);
 
     if (id_str.len % 2 != 0) {
         return null;
@@ -95,9 +93,7 @@ fn parse_invalid_id(id: usize) ?usize {
 }
 
 fn parse_invalid_id_2(id: usize) ?usize {
-    var buffer: [4096]u8 = undefined;
-    const result = std.fmt.bufPrintZ(buffer[0..], "{d}", .{id}) catch unreachable;
-    const id_str = @as([]const u8, result);
+    const id_str = as_u8(id);
 
     if (id_str.len == 1) {
         return null;
@@ -126,6 +122,12 @@ fn parse_invalid_id_2(id: usize) ?usize {
     }
 
     return null;
+}
+
+fn as_u8(x: usize) []const u8 {
+    var buffer: [4096]u8 = undefined;
+    const result = std.fmt.bufPrintZ(buffer[0..], "{d}", .{x}) catch unreachable;
+    return @as([]const u8, result);
 }
 
 test "Parse invalid Id" {
