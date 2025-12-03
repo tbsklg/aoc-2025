@@ -14,6 +14,9 @@ pub fn main() !void {
 
     const sol_1 = try part_1(file_contents);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(file_contents);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(input: []u8) !usize {
@@ -29,7 +32,27 @@ fn part_1(input: []u8) !usize {
         const range = try Range.from_line(line);
 
         for (range.from..range.to + 1) |id| {
-            invalid += parse_id(id) orelse 0;
+            invalid += parse_invalid_id(id) orelse 0;
+        }
+    }
+
+    return invalid;
+}
+
+fn part_2(input: []u8) !usize {
+    const trimmed = std.mem.trim(u8, input, " \t\r\n");
+    var lines = std.mem.splitScalar(u8, trimmed, ',');
+
+    var invalid: usize = 0;
+    while (lines.next()) |line| {
+        if (line.len == 0) {
+            continue;
+        }
+
+        const range = try Range.from_line(line);
+
+        for (range.from..range.to + 1) |id| {
+            invalid += parse_invalid_id_2(id) orelse 0;
         }
     }
 
@@ -52,7 +75,7 @@ const Range = struct {
     }
 };
 
-fn parse_id(id: usize) ?usize {
+fn parse_invalid_id(id: usize) ?usize {
     var buffer: [4096]u8 = undefined;
     const result = std.fmt.bufPrintZ(buffer[0..], "{d}", .{id}) catch unreachable;
     const id_str = @as([]const u8, result);
@@ -71,13 +94,53 @@ fn parse_id(id: usize) ?usize {
     return null;
 }
 
-test "Parse invalid Id" {
-    try std.testing.expectEqual(parse_id("11"), null);
-    try std.testing.expectEqual(parse_id("1188511885"), null);
-    try std.testing.expectEqual(parse_id("222222"), null);
-    try std.testing.expectEqual(parse_id("38593859"), null);
+fn parse_invalid_id_2(id: usize) ?usize {
+    var buffer: [4096]u8 = undefined;
+    const result = std.fmt.bufPrintZ(buffer[0..], "{d}", .{id}) catch unreachable;
+    const id_str = @as([]const u8, result);
+
+    if (id_str.len == 1) {
+        return null;
+    }
+
+    var has_pattern = true;
+    for (0..id_str.len / 2 + 1) |i| {
+        var it = std.mem.window(u8, id_str, i + 1, i + 1);
+
+        const base = it.next().?;
+        while (it.next()) |x| {
+            if (!std.mem.eql(u8, base, x)) {
+                has_pattern = false;
+                break;
+            }
+            has_pattern = true;
+        }
+
+        if (has_pattern) {
+            break;
+        }
+    }
+
+    if (has_pattern) {
+        return id;
+    }
+
+    return null;
 }
 
-test "Parse valid Id" {
-    try std.testing.expectEqual(parse_id("111"), "111");
+test "Parse invalid Id" {
+    try std.testing.expectEqual(parse_invalid_id(11), 11);
+    try std.testing.expectEqual(parse_invalid_id(1188511885), 1188511885);
+    try std.testing.expectEqual(parse_invalid_id(222222), 222222);
+    try std.testing.expectEqual(parse_invalid_id(38593859), 38593859);
+    try std.testing.expectEqual(parse_invalid_id(111), null);
+}
+
+test "Parse invalid Id extended" {
+    try std.testing.expectEqual(parse_invalid_id_2(2121212121), 2121212121);
+    try std.testing.expectEqual(parse_invalid_id_2(222222), 222222);
+    try std.testing.expectEqual(parse_invalid_id_2(11), 11);
+    try std.testing.expectEqual(parse_invalid_id_2(123123123), 123123123);
+    try std.testing.expectEqual(parse_invalid_id_2(1111111), 1111111);
+    try std.testing.expectEqual(parse_invalid_id_2(12), null);
 }
