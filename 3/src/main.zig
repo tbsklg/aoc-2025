@@ -37,7 +37,7 @@ fn part_2(input: []const u8) !usize {
     var result: usize = 0;
     while (lines.next()) |line| {
         var state = [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-        find_sequence(line, &state, 0, 0);
+        largest_joltage_2(line, &state, 0, 0);
         result += try std.fmt.parseInt(usize, &state, 10);
     }
 
@@ -65,7 +65,7 @@ fn largest_joltage(input: []const u8) !u8 {
     return try std.fmt.parseInt(u8, &result, 10);
 }
 
-fn find_sequence(input: []const u8, state: []u8, depth: usize, start: usize) void {
+fn largest_joltage_2(input: []const u8, state: []u8, depth: usize, start: usize) void {
     if (depth >= state.len) return;
 
     const remaining = state.len - depth;
@@ -76,7 +76,7 @@ fn find_sequence(input: []const u8, state: []u8, depth: usize, start: usize) voi
             state[depth] = input[i];
             if (depth + 1 < state.len) {
                 state[depth + 1] = 0;
-                find_sequence(input, state, depth + 1, i + 1);
+                largest_joltage_2(input, state, depth + 1, i + 1);
             }
         }
     }
