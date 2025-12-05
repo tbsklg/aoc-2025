@@ -65,6 +65,7 @@ fn largest_joltage(input: []const u8) !u8 {
     return try std.fmt.parseInt(u8, &result, 10);
 }
 
+// TODO: use monotonic stack instead
 fn largest_joltage_2(input: []const u8, state: []u8, depth: usize, start: usize) void {
     if (depth >= state.len) return;
 
