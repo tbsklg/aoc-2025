@@ -23,10 +23,10 @@ fn part_1(input: []const u8) !usize {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const grid = (try Grid.from(allocator, input)).grid;
-    defer allocator.free(grid);
+    const grid = try Grid.from(allocator, input);
+    try grid.accessable_paper();
+    defer grid.deinit();
 
-    std.debug.print("{d}", .{grid[0][0]});
     return 0;
 }
 
@@ -37,6 +37,7 @@ const Pos = struct {
 
 const Grid = struct {
     grid: []const []const u8,
+    allocator: std.mem.Allocator,
 
     fn from(allocator: std.mem.Allocator, input: []const u8) !Grid {
         var grid = std.ArrayList([]const u8){};
@@ -47,10 +48,19 @@ const Grid = struct {
             try grid.append(allocator, line);
         }
 
-        return .{ .grid = try grid.toOwnedSlice(allocator) };
+        return .{
+            .grid = try grid.toOwnedSlice(allocator),
+            .allocator = allocator,
+        };
     }
 
-    fn accessable_paper(self: *Grid) ![]Pos {
-       self.grid 
+    fn deinit(self: *const Grid) void {
+        self.allocator.free(self.grid);
+    }
+
+    fn accessable_paper(self: *const Grid) !void {
+        for (self.grid, 0..) |item, i| {
+            std.debug.print("{s} {d}\n", .{ item, i });
+        }
     }
 };
