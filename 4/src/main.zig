@@ -24,15 +24,16 @@ fn part_1(input: []const u8) !usize {
     const allocator = gpa.allocator();
 
     const grid = try Grid.from(allocator, input);
-    try grid.accessable_paper();
+    const papers = grid.accessable_papers();
+    std.log.debug("{d}", .{papers});
     defer grid.deinit();
 
     return 0;
 }
 
 const Pos = struct {
-    x: u8,
-    y: u8,
+    x: i32,
+    y: i32,
 };
 
 const Grid = struct {
@@ -58,9 +59,38 @@ const Grid = struct {
         self.allocator.free(self.grid);
     }
 
-    fn accessable_paper(self: *const Grid) !void {
-        for (self.grid, 0..) |item, i| {
-            std.debug.print("{s} {d}\n", .{ item, i });
+    fn accessable_papers(self: *const Grid) usize {
+        var count: usize = 0;
+
+        for (0..self.grid.len) |x| {
+            for (0..self.grid[x].len) |y| {
+                if (self.grid[x][y] == '@') {
+                    const pos: Pos = .{ .x = @intCast(x), .y = @intCast(y) };
+                    if (self.papers_around(pos) < 4) {
+                        count += 1;
+                    }
+                }
+            }
         }
+
+        return count;
+    }
+
+    fn papers_around(self: *const Grid, pos: Pos) usize {
+        const dirs = [8](struct { i8, i8 }){ .{ 1, 0 }, .{ 1, -1 }, .{ 0, -1 }, .{ -1, -1 }, .{ -1, 0 }, .{ -1, 1 }, .{ 0, 1 }, .{ 1, 1 } };
+
+        var count: usize = 0;
+        for (dirs) |dir| {
+            const xs = @as(i32, pos.x) + dir.@"0";
+            const ys = @as(i32, pos.y) + dir.@"1";
+
+            if (xs >= 0 and xs < self.grid.len and ys >= 0 and ys < self.grid[@intCast(pos.y)].len) {
+                if (self.grid[@intCast(xs)][@intCast(ys)] == '@') {
+                    count += 1;
+                }
+            }
+        }
+
+        return count;
     }
 };
