@@ -78,22 +78,21 @@ const Grid = struct {
     }
 
     fn accessable_papers(self: *const Grid) !usize {
-        var count: usize = 0;
+        var papers_count: usize = 0;
 
         for (0..self.grid.len) |x| {
             for (0..self.grid[x].len) |y| {
                 const pos = Pos{ .x = @intCast(x), .y = @intCast(y) };
                 if (self.grid[x][y] == '@') {
-                    const papers = try self.papers_around(pos);
-                    defer self.allocator.free(papers);
-                    if (papers.len < 4) {
-                        count += 1;
+                    if (self.papers_around(pos) < 4) {
+                        papers_count += 1;
+                        self.grid[@intCast(x)][@intCast(y)] = 'x';
                     }
                 }
             }
         }
 
-        return count;
+        return papers_count;
     }
 
     fn accessable_papers_with_cleanup(self: *const Grid) !usize {
@@ -102,10 +101,7 @@ const Grid = struct {
             for (0..self.grid[x].len) |y| {
                 const pos = Pos{ .x = @intCast(x), .y = @intCast(y) };
                 if (self.grid[x][y] == '@') {
-                    const papers = try self.papers_around(pos);
-                    defer self.allocator.free(papers);
-
-                    if (papers.len < 4) {
+                    if (self.papers_around(pos) < 4) {
                         papers_count += 1;
                         self.grid[@intCast(x)][@intCast(y)] = 'x';
                     }
@@ -120,29 +116,21 @@ const Grid = struct {
         return papers_count + try self.accessable_papers_with_cleanup();
     }
 
-    fn print(self: *const Grid) void {
-        for (self.grid) |row| {
-            std.log.debug("{s}", .{row});
-        }
-    }
-
-    fn papers_around(self: *const Grid, pos: Pos) ![]Pos {
-        var papers = std.ArrayList(Pos){};
-        defer papers.deinit(self.allocator);
-
+    fn papers_around(self: *const Grid, pos: Pos) usize {
         const dirs = [8](struct { i8, i8 }){ .{ 1, 0 }, .{ 1, -1 }, .{ 0, -1 }, .{ -1, -1 }, .{ -1, 0 }, .{ -1, 1 }, .{ 0, 1 }, .{ 1, 1 } };
 
+        var papers_count: usize = 0;
         for (dirs) |dir| {
             const xs = @as(i32, pos.x) + dir.@"0";
             const ys = @as(i32, pos.y) + dir.@"1";
 
             if (xs >= 0 and xs < self.grid.len and ys >= 0 and ys < self.grid[@intCast(pos.y)].len) {
                 if (self.grid[@intCast(xs)][@intCast(ys)] == '@') {
-                    try papers.append(self.allocator, .{ .x = xs, .y = ys });
+                    papers_count += 1;
                 }
             }
         }
 
-        return papers.toOwnedSlice(self.allocator);
+        return papers_count;
     }
 };
