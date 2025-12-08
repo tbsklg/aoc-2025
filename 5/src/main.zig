@@ -20,39 +20,60 @@ pub fn main() !void {
 }
 
 fn part_1(input: []const u8) !usize {
-    var parts = std.mem.splitSequence(u8, input, "\n\n");
-    const ranges = parts.next().?;
-    const ingredients = parts.next().?;
-
-    _ = try fold_ranges(ranges);
-
-    std.log.debug("ranges: {s}", .{ranges});
-    std.log.debug("ingredients: {s}", .{ingredients});
-    return 0;
-}
-
-fn fold_ranges(input: []const u8) ![]Range {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    var parts = std.mem.splitSequence(u8, input, "\n\n");
+
+    const ranges = try fold_ranges(allocator, parts.next().?);
+    defer allocator.free(ranges);
+
+    var ingredients = std.mem.splitScalar(u8, parts.next().?, '\n');
+
+    var count: usize = 0;
+    while (ingredients.next()) |i| {
+        const ingredient = try std.fmt.parseInt(usize, i, 10);
+
+        for (ranges) |r| {
+            if (r.includes(ingredient)) {
+                count += 1;
+                break;
+            }
+        }
+    }
+
+    return count;
+}
+
+fn fold_ranges(allocator: std.mem.Allocator, input: []const u8) ![]Range {
     var ranges = std.ArrayList(Range){};
     defer ranges.deinit(allocator);
 
     var lines = std.mem.splitScalar(u8, input, '\n');
+    var count: usize = 0;
     while (lines.next()) |line| {
-        const range = try Range.create(line);
-        try ranges.append(allocator, range);
+        count += 1;
+        var new_range = try Range.create(line);
 
-        std.log.debug("{d}", .{range.from});
+        var merged = false;
+        for (ranges.items) |*range| {
+            _ = new_range.try_merge(range.*) catch continue;
+            merged = true;
+            break;
+        }
+
+        if (!merged) {
+            try ranges.append(allocator, new_range);
+        }
     }
 
     return ranges.toOwnedSlice(allocator);
 }
 
 const Range = struct {
-    from: u32,
-    to: u32,
+    from: usize,
+    to: usize,
 
     fn create(input: []const u8) !Range {
         var range = std.mem.splitScalar(u8, input, '-');
@@ -73,6 +94,10 @@ const Range = struct {
         self.from = @min(self.from, range.from);
         self.to = @max(self.to, range.to);
         return self.*;
+    }
+
+    fn includes(self: *const Range, ingredient: usize) bool {
+        return self.from <= ingredient and self.to >= ingredient;
     }
 };
 
