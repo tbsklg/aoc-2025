@@ -24,24 +24,30 @@ fn part_1(input: []const u8) !usize {
     const ranges = parts.next().?;
     const ingredients = parts.next().?;
 
+    _ = try fold_ranges(ranges);
+
     std.log.debug("ranges: {s}", .{ranges});
-    std.log.debug("ingredents: {s}", .{ingredients});
+    std.log.debug("ingredients: {s}", .{ingredients});
     return 0;
 }
 
-fn fold_ranges(input: []const u8) []Range {
+fn fold_ranges(input: []const u8) ![]Range {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var ranges = std.ArrayList([]u8){};
+    var ranges = std.ArrayList(Range){};
     defer ranges.deinit(allocator);
 
     var lines = std.mem.splitScalar(u8, input, '\n');
     while (lines.next()) |line| {
-        const range = try Range.from(line);
-        ranges.append(allocator, range);
+        const range = try Range.create(line);
+        try ranges.append(allocator, range);
+
+        std.log.debug("{d}", .{range.from});
     }
+
+    return ranges.toOwnedSlice(allocator);
 }
 
 const Range = struct {
