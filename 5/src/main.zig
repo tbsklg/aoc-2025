@@ -17,7 +17,7 @@ pub fn main() !void {
 
     const sol_1 = try part_1(trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
-    
+
     const sol_2 = try part_2(trimmed);
     std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
@@ -61,7 +61,7 @@ fn part_2(input: []const u8) !usize {
 
     var count: usize = 0;
     for (ranges) |r| {
-        count += r.to - r.from;
+        count += r.to - r.from + 1;
     }
 
     return count;
@@ -73,18 +73,25 @@ fn fold_ranges(allocator: std.mem.Allocator, input: []const u8) ![]Range {
 
     var lines = std.mem.splitScalar(u8, input, '\n');
     while (lines.next()) |line| {
+        if (line.len == 0) continue;
         var new_range = try Range.create(line);
 
-        for (ranges.items) |*range| {
-            if (new_range.try_merge(range.*)) |merged_range| {
-                range.* = merged_range;
-                break;
-            }
-        } else {
-            try ranges.append(allocator, new_range);
-        }
-    }
+        var keep_merging = true;
+        while (keep_merging) {
+            keep_merging = false;
 
+            var i: usize = 0;
+            while (i < ranges.items.len) {
+                if (new_range.try_merge(ranges.items[i])) |_| {
+                    _ = ranges.swapRemove(i);
+                    keep_merging = true;
+                    break;
+                }
+                i += 1;
+            }
+        }
+        try ranges.append(allocator, new_range);
+    }
     return ranges.toOwnedSlice(allocator);
 }
 
