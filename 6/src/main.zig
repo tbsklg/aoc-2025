@@ -182,9 +182,7 @@ fn parse_operator(allocator: std.mem.Allocator, input: []const u8) ![]Operator {
     while (raw_operators.next()) |raw| {
         if (std.mem.eql(u8, raw, "*")) {
             try operators.append(Operator.multiply);
-        }
-
-        if (std.mem.eql(u8, raw, "+")) {
+        } else if (std.mem.eql(u8, raw, "+")) {
             try operators.append(Operator.add);
         }
     }
