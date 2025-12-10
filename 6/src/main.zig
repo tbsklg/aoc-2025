@@ -58,92 +58,95 @@ fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
 
 const Operator = enum { add, multiply };
 
+fn flushDigitsToNumbers(allocator: std.mem.Allocator, digits: *std.ArrayList(u8), numbers: *std.ArrayList(usize)) !void {
+    if (digits.items.len > 0) {
+        const digits_slice = try digits.toOwnedSlice();
+        defer allocator.free(digits_slice);
+
+        const number = try std.fmt.parseInt(usize, digits_slice, 10);
+        try numbers.append(number);
+    }
+}
+
 fn do_math_right_to_left(allocator: std.mem.Allocator, input: [][]u8) !usize {
     var total: usize = 0;
 
-    var numbers = std.ArrayList(usize){};
-    defer numbers.deinit(allocator);
+    var numbers = std.ArrayList(usize).init(allocator);
+    defer numbers.deinit();
 
-    const line_length = input[0].len;
-    for (0..line_length) |i| {
-        var digits = std.ArrayList(u8){};
-        defer digits.deinit(allocator);
+    const width = input[0].len;
+    const height = input.len;
+    
+    for (0..width) |column_index| {
+        var digits = std.ArrayList(u8).init(allocator);
+        defer digits.deinit();
 
-        for (input, 0..) |row, j| {
-            const raw = row[line_length - 1 - i];
+        for (input, 0..) |row, row_index| {
+            const raw = row[width - 1 - column_index];
 
             if (raw == '+') {
+                try flushDigitsToNumbers(allocator, &digits, &numbers);
+
                 var result: usize = 0;
-                if (digits.items.len > 0) {
-                    const digits_slice = try digits.toOwnedSlice(allocator);
-                    defer allocator.free(digits_slice);
-
-                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
-
-                    try numbers.append(allocator, number);
-                }
-
-                while (numbers.items.len > 0) {
-                    const number = numbers.swapRemove(0);
+                for (numbers.items) |number| {
                     result += number;
                 }
+                numbers.clearRetainingCapacity();
+                
                 total += result;
                 break;
             }
 
             if (raw == '*') {
+                try flushDigitsToNumbers(allocator, &digits, &numbers);
+
                 var result: usize = 1;
-                if (digits.items.len > 0) {
-                    const digits_slice = try digits.toOwnedSlice(allocator);
-                    defer allocator.free(digits_slice);
-
-                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
-
-                    try numbers.append(allocator, number);
-                }
-
-                while (numbers.items.len > 0) {
-                    const number = numbers.swapRemove(0);
+                for (numbers.items) |number| {
                     result *= number;
                 }
+                numbers.clearRetainingCapacity();
+                
                 total += result;
                 break;
             }
 
             if (raw != ' ') {
-                try digits.append(allocator, raw);
+                try digits.append(raw);
             }
 
-            if (j == input.len - 1) {
-                if (digits.items.len > 0) {
-                    const digits_slice = try digits.toOwnedSlice(allocator);
-                    defer allocator.free(digits_slice);
-
-                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
-                    try numbers.append(allocator, number);
-                }
+            if (row_index == height - 1) {
+                try flushDigitsToNumbers(allocator, &digits, &numbers);
             }
         }
     }
     return total;
 }
 
-fn do_math(operators: []Operator, numbers: [][]const usize) usize {
+fn do_math(operators: []const Operator, numbers: [][]const usize) usize {
     var total: usize = 0;
-    for (0..numbers[0].len) |i| {
-        const operator = operators[i];
+    const row_count = numbers.len;
+    const col_count = numbers[0].len;
+    
+    for (0..col_count) |col| {
+        const operator = operators[col];
 
-        var result: usize = 0;
-        for (numbers) |number_line| {
-            const number = number_line[i];
-            if (operator == Operator.add) {
-                result += number;
-            }
-
-            if (operator == Operator.multiply) {
-                result = @max(result, 1) * number;
-            }
-        }
+        const result = switch (operator) {
+            .add => blk: {
+                var sum: usize = 0;
+                for (0..row_count) |row| {
+                    sum += numbers[row][col];
+                }
+                break :blk sum;
+            },
+            .multiply => blk: {
+                var product: usize = 1;
+                for (0..row_count) |row| {
+                    product *= numbers[row][col];
+                }
+                break :blk product;
+            },
+        };
+        
         total += result;
     }
 
@@ -151,53 +154,54 @@ fn do_math(operators: []Operator, numbers: [][]const usize) usize {
 }
 
 fn parse_numbers(allocator: std.mem.Allocator, input: [][]u8) ![][]const usize {
-    var lines = std.ArrayList([]const usize){};
-    defer lines.deinit(allocator);
+    var lines = std.ArrayList([]const usize).init(allocator);
+    defer lines.deinit();
 
     for (input) |line| {
-        var numbers = std.ArrayList(usize){};
-        defer numbers.deinit(allocator);
+        var numbers = std.ArrayList(usize).init(allocator);
+        defer numbers.deinit();
 
         var raw_numbers = std.mem.tokenizeScalar(u8, line, ' ');
         while (raw_numbers.next()) |raw| {
             const number = try std.fmt.parseInt(usize, raw, 10);
-            try numbers.append(allocator, number);
+            try numbers.append(number);
         }
 
-        try lines.append(allocator, try numbers.toOwnedSlice(allocator));
+        try lines.append(try numbers.toOwnedSlice());
     }
 
-    return lines.toOwnedSlice(allocator);
+    return lines.toOwnedSlice();
 }
 
-fn parse_operator(allocator: std.mem.Allocator, input: []u8) ![]Operator {
+fn parse_operator(allocator: std.mem.Allocator, input: []const u8) ![]Operator {
     var raw_operators = std.mem.tokenizeScalar(u8, input, ' ');
 
-    var operators = std.ArrayList(Operator){};
-    defer operators.deinit(allocator);
+    var operators = std.ArrayList(Operator).init(allocator);
+    defer operators.deinit();
 
     while (raw_operators.next()) |raw| {
         if (std.mem.eql(u8, raw, "*")) {
-            try operators.append(allocator, Operator.multiply);
+            try operators.append(Operator.multiply);
         }
 
         if (std.mem.eql(u8, raw, "+")) {
-            try operators.append(allocator, Operator.add);
+            try operators.append(Operator.add);
         }
     }
 
-    return operators.toOwnedSlice(allocator);
+    return operators.toOwnedSlice();
 }
 
 fn parse_homework(allocator: std.mem.Allocator, input: []const u8) ![][]u8 {
-    var homework = std.ArrayList([]u8){};
-    defer homework.deinit(allocator);
+    var homework = std.ArrayList([]u8).init(allocator);
+    defer homework.deinit();
 
     var lines = std.mem.splitScalar(u8, input, '\n');
     while (lines.next()) |line| {
-        const mutable_line = try allocator.dupe(u8, line);
-        try homework.append(allocator, mutable_line);
+        const trimmed = std.mem.trim(u8, line, "\t\r ");
+        const mutable_line = try allocator.dupe(u8, trimmed);
+        try homework.append(mutable_line);
     }
 
-    return homework.toOwnedSlice(allocator);
+    return homework.toOwnedSlice();
 }
