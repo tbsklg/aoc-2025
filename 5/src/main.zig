@@ -1,5 +1,4 @@
 const std = @import("std");
-const day5 = @import("_5");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
