@@ -16,6 +16,9 @@ pub fn main() !void {
 
     const sol_1 = try part_1(allocator, trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(allocator, trimmed);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
@@ -41,7 +44,89 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     return do_math(operators, numbers);
 }
 
+fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
+    const homework = try parse_homework(allocator, input);
+    defer {
+        for (homework) |line| {
+            allocator.free(line);
+        }
+        allocator.free(homework);
+    }
+
+    return do_math_right_to_left(allocator, homework);
+}
+
 const Operator = enum { add, multiply };
+
+fn do_math_right_to_left(allocator: std.mem.Allocator, input: [][]u8) !usize {
+    var total: usize = 0;
+
+    var numbers = std.ArrayList(usize){};
+    defer numbers.deinit(allocator);
+
+    const line_length = input[0].len;
+    for (0..line_length) |i| {
+        var digits = std.ArrayList(u8){};
+        defer digits.deinit(allocator);
+
+        for (input, 0..) |row, j| {
+            const raw = row[line_length - 1 - i];
+
+            if (raw == '+') {
+                var result: usize = 0;
+                if (digits.items.len > 0) {
+                    const digits_slice = try digits.toOwnedSlice(allocator);
+                    defer allocator.free(digits_slice);
+
+                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
+
+                    try numbers.append(allocator, number);
+                }
+
+                while (numbers.items.len > 0) {
+                    const number = numbers.swapRemove(0);
+                    result += number;
+                }
+                total += result;
+                break;
+            }
+
+            if (raw == '*') {
+                var result: usize = 1;
+                if (digits.items.len > 0) {
+                    const digits_slice = try digits.toOwnedSlice(allocator);
+                    defer allocator.free(digits_slice);
+
+                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
+
+                    try numbers.append(allocator, number);
+                }
+
+                while (numbers.items.len > 0) {
+                    const number = numbers.swapRemove(0);
+                    result *= number;
+                }
+                total += result;
+                break;
+            }
+
+            if (raw != ' ') {
+                try digits.append(allocator, raw);
+            }
+
+            if (j == input.len - 1) {
+                if (digits.items.len > 0) {
+                    const digits_slice = try digits.toOwnedSlice(allocator);
+                    defer allocator.free(digits_slice);
+
+                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
+                    try numbers.append(allocator, number);
+                }
+            }
+        }
+    }
+    return total;
+}
 
 fn do_math(operators: []Operator, numbers: [][]const usize) usize {
     var total: usize = 0;
