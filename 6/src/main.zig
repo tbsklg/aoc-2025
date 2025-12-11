@@ -64,48 +64,25 @@ fn do_math_right_to_left(allocator: std.mem.Allocator, input: [][]u8) !usize {
     var numbers = std.ArrayList(usize){};
     defer numbers.deinit(allocator);
 
-    const line_length = input[0].len;
-    for (0..line_length) |i| {
+    const width = input[0].len;
+    for (0..width) |col| {
         var digits = std.ArrayList(u8){};
         defer digits.deinit(allocator);
 
-        for (input, 0..) |row, j| {
-            const raw = row[line_length - 1 - i];
+        const column_index = width - 1 - col;
+        for (input, 0..) |row, row_index| {
+            const raw = row[column_index];
 
             if (raw == '+') {
-                var result: usize = 0;
-                if (digits.items.len > 0) {
-                    const digits_slice = try digits.toOwnedSlice(allocator);
-                    defer allocator.free(digits_slice);
-
-                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
-
-                    try numbers.append(allocator, number);
-                }
-
-                while (numbers.items.len > 0) {
-                    const number = numbers.swapRemove(0);
-                    result += number;
-                }
+                try flushDigitsToNumbers(allocator, &digits, &numbers);
+                const result = consume_sum(&numbers);
                 total += result;
                 break;
             }
 
             if (raw == '*') {
-                var result: usize = 1;
-                if (digits.items.len > 0) {
-                    const digits_slice = try digits.toOwnedSlice(allocator);
-                    defer allocator.free(digits_slice);
-
-                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
-
-                    try numbers.append(allocator, number);
-                }
-
-                while (numbers.items.len > 0) {
-                    const number = numbers.swapRemove(0);
-                    result *= number;
-                }
+                try flushDigitsToNumbers(allocator, &digits, &numbers);
+                const result = consume_product(&numbers);
                 total += result;
                 break;
             }
@@ -114,36 +91,68 @@ fn do_math_right_to_left(allocator: std.mem.Allocator, input: [][]u8) !usize {
                 try digits.append(allocator, raw);
             }
 
-            if (j == input.len - 1) {
-                if (digits.items.len > 0) {
-                    const digits_slice = try digits.toOwnedSlice(allocator);
-                    defer allocator.free(digits_slice);
-
-                    const number = try std.fmt.parseInt(usize, digits_slice, 10);
-                    try numbers.append(allocator, number);
-                }
+            if (row_index == input.len - 1) {
+                try flushDigitsToNumbers(allocator, &digits, &numbers);
             }
         }
     }
     return total;
 }
 
+fn flushDigitsToNumbers(
+    allocator: std.mem.Allocator,
+    digits: *std.ArrayList(u8),
+    numbers: *std.ArrayList(usize),
+) !void {
+    if (digits.items.len == 0) return;
+
+    const slice = try digits.toOwnedSlice(allocator);
+    defer allocator.free(slice);
+
+    const number = try std.fmt.parseInt(usize, slice, 10);
+    try numbers.append(allocator, number);
+
+    digits.clearRetainingCapacity();
+}
+
+fn consume_sum(numbers: *std.ArrayList(usize)) usize {
+    var result: usize = 0;
+    for (numbers.items) |value| {
+        result += value;
+    }
+
+    numbers.clearRetainingCapacity();
+    return result;
+}
+
+fn consume_product(numbers: *std.ArrayList(usize)) usize {
+    var result: usize = 1;
+    for (numbers.items) |value| {
+        result *= value;
+    }
+
+    numbers.clearRetainingCapacity();
+    return result;
+}
+
 fn do_math(operators: []Operator, numbers: [][]const usize) usize {
     var total: usize = 0;
-    for (0..numbers[0].len) |i| {
-        const operator = operators[i];
+    for (0..numbers[0].len) |col| {
+        const op = operators[col];
 
-        var result: usize = 0;
-        for (numbers) |number_line| {
-            const number = number_line[i];
-            if (operator == Operator.add) {
-                result += number;
-            }
+        var result: usize = switch (op) {
+            .add => 0,
+            .multiply => 1,
+        };
 
-            if (operator == Operator.multiply) {
-                result = @max(result, 1) * number;
+        for (numbers) |row| {
+            const value = row[col];
+            switch (op) {
+                .add => result += value,
+                .multiply => result *= value,
             }
         }
+
         total += result;
     }
 
