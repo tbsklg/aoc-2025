@@ -21,6 +21,26 @@ pub fn build(b: *std.Build) void {
     // target and optimize options) will be listed when running `zig build --help`
     // in this directory.
 
+    // This creates a module, which represents a collection of source files alongside
+    // some compilation options, such as optimization mode and linked system libraries.
+    // Zig modules are the preferred way of making Zig code available to consumers.
+    // addModule defines a module that we intend to make available for importing
+    // to our consumers. We must give it a name because a Zig package can expose
+    // multiple modules and consumers will need to be able to specify which
+    // module they want to access.
+    // const mod = b.addModule("_8", .{
+        // The root source file is the "entry point" of this module. Users of
+        // this module will only be able to access public declarations contained
+        // in this file, which means that if you have declarations that you
+        // intend to expose to consumers that were defined in other files part
+        // of this module, you will have to make sure to re-export them from
+        // the root file.
+        // .root_source_file = b.path("src/root.zig"),
+        // Later on we'll use this module as the root module of a test executable
+        // which requires us to specify a target.
+        // .target = target,
+    // });
+
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
     // to the module defined above, it's sometimes preferable to split business
@@ -38,7 +58,7 @@ pub fn build(b: *std.Build) void {
     // If neither case applies to you, feel free to delete the declaration you
     // don't need and to put everything under a single module.
     const exe = b.addExecutable(.{
-        .name = "_7",
+        .name = "_8",
         .root_module = b.createModule(.{
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of
@@ -52,6 +72,14 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             // List of modules available for import in source files part of the
             // root module.
+            .imports = &.{
+                // Here "_8" is the name you will use in your source code to
+                // import this module (e.g. `@import("_8")`). The name is
+                // repeated because you are allowed to rename your imports, which
+                // can be extremely useful in case of collisions (which can happen
+                // importing modules from different packages).
+                // .{ .name = "_8", .module = mod },
+            },
         }),
     });
 
@@ -62,14 +90,14 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const exe_check = b.addExecutable(.{
-        .name = "_7",
+        .name = "_8",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    const check = b.step("check", "Check if 7 compiles");
+    const check = b.step("check", "Check if 8 compiles");
     check.dependOn(&exe_check.step);
 
     // This creates a top level step. Top level steps have a name and can be
@@ -98,6 +126,16 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
+    // Creates an executable that will run `test` blocks from the provided module.
+    // Here `mod` needs to define a target, which is why earlier we made sure to
+    // set the releative field.
+    // const mod_tests = b.addTest(.{
+        // .root_module = mod,
+    // });
+
+    // A run step that will run the test executable.
+    // const run_mod_tests = b.addRunArtifact(mod_tests);
+
     // Creates an executable that will run `test` blocks from the executable's
     // root module. Note that test executables only test one module at a time,
     // hence why we have to create two separate ones.
@@ -112,6 +150,7 @@ pub fn build(b: *std.Build) void {
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
+    // test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
