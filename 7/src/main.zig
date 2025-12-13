@@ -16,6 +16,9 @@ pub fn main() !void {
 
     const sol_1 = try part_1(allocator, trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(allocator, trimmed);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
@@ -24,6 +27,7 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
 
     var current = std.AutoHashMap(usize, void).init(allocator);
     defer current.deinit();
+
     var next = std.AutoHashMap(usize, void).init(allocator);
     defer next.deinit();
 
@@ -49,4 +53,39 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     }
 
     return split_count;
+}
+
+fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
+    const start = std.mem.indexOf(u8, input, "S").?;
+
+    var memo = std.AutoHashMap([2]usize, usize).init(allocator);
+    defer memo.deinit();
+
+    return try count_paths(allocator, input, start, 0, &memo);
+}
+
+fn count_paths(allocator: std.mem.Allocator, lines: []const u8, pos: usize, line: usize, memo: *std.AutoHashMap([2]usize, usize)) !usize {
+    const new_line = std.mem.indexOf(u8, lines, "\n");
+
+    if (memo.get(.{ pos, line })) |cached| {
+        return cached;
+    }
+
+    if (new_line == null) {
+        return 1;
+    } else {
+        const result: usize = cnt: {
+            if (lines[pos] == '^') {
+                const left = pos - 1;
+                const right = pos + 1;
+
+                break :cnt try count_paths(allocator, lines[new_line.? + 1 ..], left, line + 1, memo) +
+                    try count_paths(allocator, lines[new_line.? + 1 ..], right, line + 1, memo);
+            }
+            break :cnt try count_paths(allocator, lines[new_line.? + 1 ..], pos, line + 1, memo);
+        };
+
+        try memo.put(.{ pos, line }, result);
+        return result;
+    }
 }
