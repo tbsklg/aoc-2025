@@ -42,6 +42,11 @@ fn calc_distances(allocator: std.mem.Allocator, points: []const Point) ![]Distan
     return distances.toOwnedSlice(allocator);
 }
 
+const Node = struct {
+    parent: *?Node,
+    value: Point,
+};
+
 fn compareByDistance(context: void, a: Distance, b: Distance) bool {
     _ = context;
     return a.distance < b.distance;
@@ -70,6 +75,7 @@ const Point = struct {
     x: usize,
     y: usize,
     z: usize,
+    parent: ?*Point,
 
     pub fn from(input: []const u8) !Point {
         var iter = std.mem.splitScalar(u8, input, ',');
@@ -82,6 +88,7 @@ const Point = struct {
             .x = x,
             .y = y,
             .z = z,
+            .parent = null,
         };
     }
 
@@ -93,10 +100,68 @@ const Point = struct {
         return @sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    pub fn equals(self: *const Point, other: *const Point) bool {
+    pub fn find(self: *Point, other: *Point) bool {
+        if (self.equals(other)) {
+            return true;
+        }
+
+        if (self.parent != null) {
+            return self.parent.?.find(other);
+        }
+
+        return false;
+    }
+
+    pub fn merge(self: *Point, other: *Point) !void {
+        if (!self.find(other)) {
+            other.parent = self;
+        }
+    }
+
+    pub fn equals(self: *Point, other: *Point) bool {
         return self.x == other.x and self.y == other.y and self.z == other.z;
     }
 };
+
+test "Parse point" {
+    const p1 = try Point.from("1,2,3");
+
+    try std.testing.expectEqual(null, p1.parent);
+}
+
+test "Merge points" {
+    var p1 = try Point.from("1,2,3");
+    var p2 = try Point.from("3,4,5");
+
+    try p1.merge(&p2);
+
+    try std.testing.expect(p1.parent == null);
+    try std.testing.expectEqual(p2.parent.?, &p1);
+    try std.testing.expectEqual(p1.parent, null);
+}
+
+test "Merge existing point" {
+    var p1 = try Point.from("1,2,3");
+    var p2 = try Point.from("3,4,5");
+
+    try p1.merge(&p2);
+    try p2.merge(&p2);
+
+    try std.testing.expect(p1.parent == null);
+    try std.testing.expectEqual(p2.parent.?, &p1);
+    try std.testing.expectEqual(p1.parent, null);
+}
+
+test "Merge existing point on higher level" {
+    var p1 = try Point.from("1,2,3");
+    var p2 = try Point.from("3,4,5");
+    var p3 = try Point.from("1,2,3");
+
+    try p1.merge(&p2);
+    try p2.merge(&p3);
+
+    try std.testing.expect(p3.parent == null);
+}
 
 test "Calculate distance between two points" {
     const p1 = try Point.from("1,2,3");
@@ -117,35 +182,4 @@ test "Parse points" {
     defer allocator.free(points);
 
     try std.testing.expectEqual(2, points.len);
-}
-
-test "Connect points" {
-    const allocator = std.testing.allocator;
-    const input = "123,456,789\n987,654,321";
-
-    const points = try parse_points(allocator, input);
-    defer allocator.free(points);
-
-    var conns = try calc_distances(allocator, points);
-    defer conns.deinit();
-
-    defer {
-        var outer_iter = conns.iterator();
-        while (outer_iter.next()) |entry| {
-            entry.value_ptr.deinit();
-        }
-    }
-
-    try std.testing.expectEqual(2, conns.count());
-
-    const p1: Point = .{ .x = 123, .y = 456, .z = 789 };
-    const p2: Point = .{ .x = 987, .y = 654, .z = 321 };
-
-    const p1_conns = conns.get(p1).?;
-    try std.testing.expect(p1_conns.contains(p2));
-    try std.testing.expect(!p1_conns.contains(p1));
-
-    const p2_conns = conns.get(p2).?;
-    try std.testing.expect(p2_conns.contains(p1));
-    try std.testing.expect(!p2_conns.contains(p2));
 }
