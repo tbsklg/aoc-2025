@@ -16,6 +16,9 @@ pub fn main() !void {
 
     const sol_1 = try part_1(allocator, trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(allocator, trimmed);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
@@ -60,6 +63,38 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     }
 
     return result;
+}
+
+fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
+    const points = try parse_points(allocator, input);
+    defer allocator.free(points);
+
+    const distances = try calc_distances(allocator, points);
+    defer allocator.free(distances);
+
+    var index: usize = 0;
+    while (index < distances.len) {
+        const distance = distances[index];
+        distance.start.merge(distance.end);
+
+        const root = points[0].findRoot();
+        var all_same_root = true;
+        for (points[1..]) |*p| {
+            const next_root = p.findRoot();
+            if (root != next_root) {
+                all_same_root = false;
+                break;
+            }
+        }
+
+        if (all_same_root) {
+            return distance.start.x * distance.end.x;
+        }
+
+        index += 1;
+    }
+
+    return 0;
 }
 
 fn calc_distances(allocator: std.mem.Allocator, points: []Point) ![]Distance {
