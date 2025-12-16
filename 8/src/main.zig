@@ -14,60 +14,90 @@ pub fn main() !void {
 
     const trimmed = std.mem.trim(u8, file_contents, "\t\r\n");
 
-    try part_1(allocator, trimmed);
+    const sol_1 = try part_1(allocator, trimmed);
+    std.debug.print("Solution part 1: {d}\n", .{sol_1});
 }
 
-fn part_1(allocator: std.mem.Allocator, input: []const u8) !void {
+fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     const points = try parse_points(allocator, input);
     defer allocator.free(points);
 
     const distances = try calc_distances(allocator, points);
     defer allocator.free(distances);
+
+    for (0..1000) |i| {
+        distances[i].start.merge(distances[i].end);
+    }
+
+    var circuits = std.AutoHashMap(*Point, usize).init(allocator);
+    defer circuits.deinit();
+
+    for (points) |*p| {
+        const root = p.findRoot();
+
+        if (circuits.get(root)) |v| {
+            try circuits.put(root, v + 1);
+        } else {
+            try circuits.put(root, 1);
+        }
+    }
+
+    var values = std.ArrayList(usize){};
+    defer values.deinit(allocator);
+
+    var iter = circuits.iterator();
+    while (iter.next()) |entry| {
+        try values.append(allocator, entry.value_ptr.*);
+    }
+
+    std.mem.sort(usize, values.items, {}, comptime std.sort.desc(usize));
+
+    const top3_count = @min(3, values.items.len);
+
+    var result: usize = 1;
+    for (values.items[0..top3_count]) |value| {
+        result *= value;
+    }
+
+    return result;
 }
 
-fn calc_distances(allocator: std.mem.Allocator, points: []const Point) ![]Distance {
+fn calc_distances(allocator: std.mem.Allocator, points: []Point) ![]Distance {
     var distances = std.ArrayList(Distance){};
     defer distances.deinit(allocator);
-
-    for (points, 0..) |start_point, i| {
-        for (points, 0..) |end_point, j| {
+    for (points, 0..) |*start_point, i| {
+        for (points, 0..) |*end_point, j| {
             if (j > i) {
-                const distance = start_point.distance(&end_point);
+                const distance = start_point.distance(end_point);
                 try distances.append(allocator, .{ .start = start_point, .end = end_point, .distance = distance });
             }
         }
     }
-
     std.mem.sort(Distance, distances.items, {}, compareByDistance);
     return distances.toOwnedSlice(allocator);
 }
-
-const Node = struct {
-    parent: *?Node,
-    value: Point,
-};
 
 fn compareByDistance(context: void, a: Distance, b: Distance) bool {
     _ = context;
     return a.distance < b.distance;
 }
 
-fn parse_points(allocator: std.mem.Allocator, input: []const u8) ![]const Point {
+fn parse_points(allocator: std.mem.Allocator, input: []const u8) ![]Point {
     var points = std.ArrayList(Point){};
     defer points.deinit(allocator);
 
     var lines = std.mem.splitScalar(u8, input, '\n');
 
     while (lines.next()) |line| {
+        if (line.len == 0) continue;
         try points.append(allocator, try Point.from(line));
     }
-
     return points.toOwnedSlice(allocator);
 }
 
 const Distance = struct {
-    start: Point,
-    end: Point,
+    start: *Point,
+    end: *Point,
     distance: f64,
 };
 
@@ -79,11 +109,9 @@ const Point = struct {
 
     pub fn from(input: []const u8) !Point {
         var iter = std.mem.splitScalar(u8, input, ',');
-
         const x = try std.fmt.parseInt(usize, iter.next().?, 10);
         const y = try std.fmt.parseInt(usize, iter.next().?, 10);
         const z = try std.fmt.parseInt(usize, iter.next().?, 10);
-
         return .{
             .x = x,
             .y = y,
@@ -96,26 +124,26 @@ const Point = struct {
         const dx = @as(f64, @floatFromInt(self.x)) - @as(f64, @floatFromInt(other.x));
         const dy = @as(f64, @floatFromInt(self.y)) - @as(f64, @floatFromInt(other.y));
         const dz = @as(f64, @floatFromInt(self.z)) - @as(f64, @floatFromInt(other.z));
-
         return @sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    pub fn find(self: *Point, other: *Point) bool {
-        if (self.equals(other)) {
-            return true;
+    pub fn findRoot(self: *Point) *Point {
+        if (self.parent) |parent| {
+            self.parent = parent.findRoot();
+            return self.parent.?;
         }
-
-        if (self.parent != null) {
-            return self.parent.?.find(other);
-        }
-
-        return false;
+        return self;
     }
 
-    pub fn merge(self: *Point, other: *Point) !void {
-        if (!self.find(other)) {
-            other.parent = self;
+    pub fn merge(self: *Point, other: *Point) void {
+        const root1 = self.findRoot();
+        const root2 = other.findRoot();
+
+        if (root1 == root2) {
+            return;
         }
+
+        root2.parent = root1;
     }
 
     pub fn equals(self: *Point, other: *Point) bool {
