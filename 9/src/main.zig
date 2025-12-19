@@ -16,6 +16,9 @@ pub fn main() !void {
 
     const sol_1 = try part_1(allocator, trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(allocator, trimmed);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
@@ -36,11 +39,50 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     return largest_area;
 }
 
+fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
+    const points = try extract_points(allocator, input);
+    defer allocator.free(points);
+
+    for (points) |p| {
+        const inside = is_point_inside(p, points);
+
+        std.debug.print("{any}\n", .{inside});
+    }
+
+    return 0;
+}
+
+fn is_point_inside(p: Point, vertices: []const Point) bool {
+    const n = vertices.len;
+
+    var crossings: usize = 0;
+    for (0..n) |i| {
+        const j = (i + 1) % n;
+        const vi = vertices[i];
+        const vj = vertices[j];
+
+        if (p.x == vi.x and p.y == vi.y) {
+            return true;
+        }
+
+        if ((vi.y > p.y) != (vj.y > p.y)) {
+            const x_intersect = @as(f64, @floatFromInt(vi.x)) +
+                @as(f64, @floatFromInt(p.y - vi.y)) *
+                    @as(f64, @floatFromInt(vj.x - vi.x)) /
+                    @as(f64, @floatFromInt(vj.y - vi.y));
+
+            if (@as(f64, @floatFromInt(p.x)) < x_intersect) {
+                crossings += 1;
+            }
+        }
+    }
+
+    return crossings % 2 == 1;
+}
+
 fn extract_points(allocator: std.mem.Allocator, input: []const u8) ![]Point {
     var lines = std.mem.splitScalar(u8, input, '\n');
-
     var points = std.ArrayList(Point){};
-    defer points.deinit(allocator);
 
     while (lines.next()) |line| {
         const point = try Point.from(line);
