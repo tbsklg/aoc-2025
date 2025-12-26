@@ -8,3 +8,5 @@
 **/zig-cache/
 
 **/input.txt
+
+**/.DS_Store
