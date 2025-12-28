@@ -20,19 +20,25 @@ pub fn main() !void {
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     var lines = std.mem.splitScalar(u8, input, '\n');
+    var total: usize = 0;
 
     while (lines.next()) |line| {
         var m = try Machine.from(allocator, line);
         defer m.deinit();
-        _ = try guenther(allocator, m);
+        const result = try bfs(allocator, m);
+        total += result;
     }
 
-    return 0;
+    return total;
 }
 
-const State = struct { []const u8, []const u8, usize };
+const State = struct {
+    button: []const u8,
+    lights: []const u8,
+    depth: usize,
+};
 
-fn guenther(allocator: std.mem.Allocator, m: Machine) !usize {
+fn bfs(allocator: std.mem.Allocator, m: Machine) !usize {
     const initial_lights = try allocator.alloc(u8, m.lights.len);
     defer allocator.free(initial_lights);
 
@@ -41,40 +47,66 @@ fn guenther(allocator: std.mem.Allocator, m: Machine) !usize {
     }
 
     var stack = std.ArrayList(State){};
-    defer stack.deinit(allocator);
+    defer {
+        for (stack.items) |state| {
+            if (state.lights.ptr != initial_lights.ptr) {
+                allocator.free(state.lights);
+            }
+        }
+        stack.deinit(allocator);
+    }
 
     for (m.buttons) |b| {
-        try stack.append(allocator, .{ b, initial_lights, 0 });
+        try stack.append(allocator, .{ .button = b, .lights = initial_lights, .depth = 0 });
     }
 
-    for (stack.items) |b| {
-        const toggled = try toggle(allocator, b.@"1", b.@"0");
+    var visited = std.StringHashMap(void).init(allocator);
+    defer {
+        var it = visited.keyIterator();
+        while (it.next()) |key| {
+            allocator.free(key.*);
+        }
+        visited.deinit();
+    }
+
+    const initial_copy = try allocator.dupe(u8, initial_lights);
+    try visited.put(initial_copy, {});
+
+    var i: usize = 0;
+    while (i < stack.items.len) : (i += 1) {
+        const current_state = stack.items[i];
+        const button = current_state.button;
+        const lights = current_state.lights;
+        const depth = current_state.depth;
+
+        const toggled = try toggle(allocator, lights, button);
 
         if (std.mem.eql(u8, m.lights, toggled)) {
-            std.debug.print("Found {s} - {d}\n", .{ toggled, b.@"2" });
+            allocator.free(toggled);
+            return depth + 1;
         }
 
-        for (m.buttons) |button| {
-            if (!std.mem.eql(u8, b.@"0", button)) {
-                std.debug.print("Skip {s}\n", .{button});
-                continue;
-            }
-            // add to queue
+        if (visited.contains(toggled)) {
+            allocator.free(toggled);
+            continue;
         }
 
-        defer allocator.free(toggled);
-        std.debug.print("{s}\n", .{toggled});
+        const toggled_for_visited = try allocator.dupe(u8, toggled);
+        try visited.put(toggled_for_visited, {});
+
+        for (m.buttons) |next_button| {
+            const toggled_copy = try allocator.dupe(u8, toggled);
+            try stack.append(allocator, .{
+                .button = next_button,
+                .lights = toggled_copy,
+                .depth = depth + 1,
+            });
+        }
+
+        allocator.free(toggled);
     }
 
-    // const result_0 = try toggle(allocator, initial_state, m.buttons[0]);
-    // const result_1 = try toggle(allocator, result_0, m.buttons[1]);
-    // const result_2 = try toggle(allocator, result_1, m.buttons[2]);
-    //
-    // defer allocator.free(result_0);
-    // defer allocator.free(result_1);
-    // defer allocator.free(result_2);
-    //
-    // std.debug.print("{s}\n", .{result_2});
+    std.debug.print("No solution found\n", .{});
     return 0;
 }
 
@@ -159,15 +191,7 @@ fn parse_lights(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
             continue;
         }
 
-        if (c == '#') {
-            try lights.append(allocator, 1);
-            continue;
-        }
-
-        if (c == '.') {
-            try lights.append(allocator, 0);
-            continue;
-        }
+        try lights.append(allocator, c);
     }
 
     return lights.toOwnedSlice(allocator);
