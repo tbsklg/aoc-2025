@@ -25,6 +25,7 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     while (lines.next()) |line| {
         var m = try Machine.from(allocator, line);
         defer m.deinit();
+
         const result = try bfs(allocator, m);
         total += result;
     }
@@ -132,6 +133,7 @@ fn toggle(allocator: std.mem.Allocator, state: []const u8, button: []const u8) !
 const Machine = struct {
     lights: []const u8,
     buttons: [][]const u8,
+    joltage: []const u8,
     allocator: std.mem.Allocator,
 
     fn from(allocator: std.mem.Allocator, input: []const u8) !Machine {
@@ -141,15 +143,24 @@ const Machine = struct {
         var buttons = std.ArrayList([]const u8){};
 
         while (iter.next()) |part| {
+            const peek = iter.peek();
+
             if (part[0] == '(') {
                 const button = try parse_button(allocator, part, lights.len);
                 try buttons.append(allocator, button);
             }
+
+            if (peek != null and peek.?[0] == '{') {
+                break;
+            }
         }
+
+        const joltage = try parse_joltage(allocator, iter.next().?);
 
         return .{
             .lights = lights,
             .buttons = try buttons.toOwnedSlice(allocator),
+            .joltage = joltage,
             .allocator = allocator,
         };
     }
@@ -160,8 +171,24 @@ const Machine = struct {
         }
         self.allocator.free(self.buttons);
         self.allocator.free(self.lights);
+        self.allocator.free(self.joltage);
     }
 };
+
+fn parse_joltage(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
+    var joltage: std.ArrayList(u8) = .{};
+    defer joltage.deinit(allocator);
+
+    for (input) |c| {
+        if (c == '{' or c == '}' or c == ',') {
+            continue;
+        }
+
+        try joltage.append(allocator, c);
+    }
+
+    return joltage.toOwnedSlice(allocator);
+}
 
 fn parse_button(allocator: std.mem.Allocator, input: []const u8, len: usize) ![]const u8 {
     var button: std.ArrayList(u8) = .{};
