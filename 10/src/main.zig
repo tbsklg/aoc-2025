@@ -194,6 +194,10 @@ const Matrix = struct {
         self.data.items[row].items[col] = value;
     }
 
+    fn swap(self: *Matrix, i: usize, j: usize) void {
+        std.mem.swap(std.ArrayList(u8), &self.data.items[i], &self.data.items[j]);
+    }
+
     fn deinit(self: *Matrix) void {
         for (self.data.items) |*row| {
             row.deinit(self.allocator);
@@ -214,8 +218,6 @@ fn create_matrix(allocator: std.mem.Allocator, m: Machine) !Matrix {
             matrix.set(position, button_idx, 1);
         }
     }
-
-    std.debug.print("{any}", .{matrix.data.items});
 
     return matrix;
 }
@@ -249,4 +251,43 @@ test "create matrix from machine" {
     try std.testing.expectEqual(1, matrix.get(0, 1));
     try std.testing.expectEqual(1, matrix.get(1, 0));
     try std.testing.expectEqual(1, matrix.get(0, 2));
+}
+
+test "swap rows in matrix" {
+    const allocator = std.testing.allocator;
+
+    const button0 = [_]usize{ 1, 2, 3 };
+    const button1 = [_]usize{ 0, 1 };
+    const button2 = [_]usize{ 0, 2, 3 };
+
+    var buttons = [_][]const usize{
+        &button0,
+        &button1,
+        &button2,
+    };
+
+    const joltage = [_]usize{ 200, 19, 207, 207 };
+
+    const machine = Machine{
+        .lights = 0b1110,
+        .buttons = &buttons,
+        .joltage = &joltage,
+        .allocator = allocator,
+    };
+
+    // | 0 1 1 |
+    // | 1 1 0 |
+    // | 1 0 1 |
+    // | 1 0 1 |
+    var matrix = try create_matrix(allocator, machine);
+    defer matrix.deinit();
+
+    // | 1 1 0 |
+    // | 0 1 1 |
+    // | 1 0 1 |
+    // | 1 0 1 |
+    matrix.swap(0, 1);
+
+    try std.testing.expectEqual(1, matrix.get(0, 0));
+    try std.testing.expectEqual(0, matrix.get(1, 0));
 }
