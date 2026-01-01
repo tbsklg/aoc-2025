@@ -167,33 +167,38 @@ fn parse_lights(input: []const u8) !usize {
 }
 
 const Matrix = struct {
-    data: std.ArrayList(u8),
-    rows: usize,
-    cols: usize,
+    data: std.ArrayList(std.ArrayList(u8)),
     allocator: std.mem.Allocator,
-    
-    fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Matrix {
-        var data = try std.ArrayList(u8).initCapacity(allocator, rows * cols);
-        
-        try data.appendNTimes(allocator, 0, rows * cols);
-        
+
+    fn init(allocator: std.mem.Allocator, m: usize, n: usize) !Matrix {
+        var data = try std.ArrayList(std.ArrayList(u8)).initCapacity(allocator, m);
+
+        var i: usize = 0;
+        while (i < m) : (i += 1) {
+            var row = try std.ArrayList(u8).initCapacity(allocator, n);
+            try row.appendNTimes(allocator, 0, n);
+            try data.append(allocator, row);
+        }
+
         return Matrix{
             .data = data,
-            .rows = rows,
-            .cols = cols,
             .allocator = allocator,
         };
     }
-    
+
     fn get(self: Matrix, row: usize, col: usize) u8 {
-        return self.data.items[row * self.cols + col];
+        return self.data.items[row].items[col];
     }
-    
+
     fn set(self: *Matrix, row: usize, col: usize, value: u8) void {
-        self.data.items[row * self.cols + col] = value;
+        self.data.items[row].items[col] = value;
     }
-    
+
     fn deinit(self: *Matrix) void {
+        for (self.data.items) |*row| {
+            row.deinit(self.allocator);
+        }
+
         self.data.deinit(self.allocator);
     }
 };
@@ -201,7 +206,7 @@ const Matrix = struct {
 fn create_matrix(allocator: std.mem.Allocator, m: Machine) !Matrix {
     const num_positions = m.joltage.len;
     const num_buttons = m.buttons.len;
-    
+
     var matrix = try Matrix.init(allocator, num_positions, num_buttons);
 
     for (m.buttons, 0..) |button, button_idx| {
@@ -209,25 +214,27 @@ fn create_matrix(allocator: std.mem.Allocator, m: Machine) !Matrix {
             matrix.set(position, button_idx, 1);
         }
     }
-    
+
+    std.debug.print("{any}", .{matrix.data.items});
+
     return matrix;
 }
 
 test "create matrix from machine" {
     const allocator = std.testing.allocator;
-    
+
     const button0 = [_]usize{ 1, 2, 3 };
     const button1 = [_]usize{ 0, 1 };
     const button2 = [_]usize{ 0, 2, 3 };
-    
+
     var buttons = [_][]const usize{
         &button0,
-        &button1, 
+        &button1,
         &button2,
     };
-    
+
     const joltage = [_]usize{ 200, 19, 207, 207 };
-    
+
     const machine = Machine{
         .lights = 0b1110,
         .buttons = &buttons,
@@ -238,11 +245,8 @@ test "create matrix from machine" {
     var matrix = try create_matrix(allocator, machine);
     defer matrix.deinit();
 
-    try std.testing.expectEqual(@as(usize, 4), matrix.rows);
-    try std.testing.expectEqual(@as(usize, 3), matrix.cols);
-    
-    try std.testing.expectEqual(@as(u8, 0), matrix.get(0, 0));
-    try std.testing.expectEqual(@as(u8, 1), matrix.get(1, 0));
-    try std.testing.expectEqual(@as(u8, 1), matrix.get(0, 1)); 
-    try std.testing.expectEqual(@as(u8, 1), matrix.get(0, 2)); 
+    try std.testing.expectEqual(0, matrix.get(0, 0));
+    try std.testing.expectEqual(1, matrix.get(0, 1));
+    try std.testing.expectEqual(1, matrix.get(1, 0));
+    try std.testing.expectEqual(1, matrix.get(0, 2));
 }
