@@ -207,6 +207,34 @@ const Matrix = struct {
         }
     }
 
+    fn eliminate_below(self: *Matrix, pivot_row: usize, col: usize) void {
+        for (self.data.items[pivot_row + 1 ..], pivot_row + 1..) |row, idx| {
+            if (row.items[col] == 1) {
+                self.xor_rows(idx, pivot_row);
+            }
+        }
+    }
+
+    fn row_echelon_form(self: *Matrix) void {
+        const num_columns = self.data.items[0].items.len;
+
+        var row_idx: usize = 0;
+        for (0..num_columns) |col_idx| {
+            if (row_idx >= self.data.items.len) break;
+
+            const pivot_row = self.find_pivot(row_idx, col_idx);
+
+            if (pivot_row == null) {
+                continue;
+            }
+
+            self.swap(row_idx, pivot_row.?);
+            self.eliminate_below(row_idx, col_idx);
+
+            row_idx += 1;
+        }
+    }
+
     fn find_pivot(self: Matrix, row_idx: usize, col_idx: usize) ?usize {
         for (self.data.items[row_idx..], row_idx..) |row, idx| {
             if (row.items[col_idx] == 1) {
@@ -384,4 +412,61 @@ test "xor rows" {
     try std.testing.expectEqual(1, matrix.get(1, 0));
     try std.testing.expectEqual(1, matrix.get(1, 1));
     try std.testing.expectEqual(0, matrix.get(1, 2));
+}
+
+test "row echelon form - binary matrix" {
+    const allocator = std.testing.allocator;
+    
+    var matrix = try Matrix.init(allocator, 4, 3);
+    defer matrix.deinit();
+    
+    // Before REF:
+    // | 0 1 1 |  row 0
+    // | 1 1 0 |  row 1
+    // | 1 0 1 |  row 2
+    // | 1 0 1 |  row 3
+    
+    // Row 0: [0, 1, 1]
+    matrix.set(0, 0, 0);
+    matrix.set(0, 1, 1);
+    matrix.set(0, 2, 1);
+    
+    // Row 1: [1, 1, 0]
+    matrix.set(1, 0, 1);
+    matrix.set(1, 1, 1);
+    matrix.set(1, 2, 0);
+    
+    // Row 2: [1, 0, 1]
+    matrix.set(2, 0, 1);
+    matrix.set(2, 1, 0);
+    matrix.set(2, 2, 1);
+    
+    // Row 3: [1, 0, 1]
+    matrix.set(3, 0, 1);
+    matrix.set(3, 1, 0);
+    matrix.set(3, 2, 1);
+    
+    matrix.row_echelon_form();
+    
+    // After REF (expected result):
+    // | 1 1 0 |  
+    // | 0 1 1 |  
+    // | 0 0 0 |  
+    // | 0 0 0 |  
+    
+    try std.testing.expectEqual(1, matrix.get(0, 0));
+    try std.testing.expectEqual(1, matrix.get(0, 1));
+    try std.testing.expectEqual(0, matrix.get(0, 2));
+    
+    try std.testing.expectEqual(0, matrix.get(1, 0));
+    try std.testing.expectEqual(1, matrix.get(1, 1));
+    try std.testing.expectEqual(1, matrix.get(1, 2));
+    
+    try std.testing.expectEqual(0, matrix.get(2, 0));
+    try std.testing.expectEqual(0, matrix.get(2, 1));
+    try std.testing.expectEqual(0, matrix.get(2, 2));
+    
+    try std.testing.expectEqual(0, matrix.get(3, 0));
+    try std.testing.expectEqual(0, matrix.get(3, 1));
+    try std.testing.expectEqual(0, matrix.get(3, 2));
 }
