@@ -198,6 +198,16 @@ const Matrix = struct {
         std.mem.swap(std.ArrayList(u8), &self.data.items[i], &self.data.items[j]);
     }
 
+    fn find_pivot(self: Matrix, row_idx: usize, col_idx: usize) ?usize {
+        for (self.data.items[row_idx..], row_idx..) |row, idx| {
+            if (row.items[col_idx] == 1) {
+                return idx;
+            }
+        }
+
+        return null;
+    }
+
     fn deinit(self: *Matrix) void {
         for (self.data.items) |*row| {
             row.deinit(self.allocator);
@@ -290,4 +300,38 @@ test "swap rows in matrix" {
 
     try std.testing.expectEqual(1, matrix.get(0, 0));
     try std.testing.expectEqual(0, matrix.get(1, 0));
+}
+
+test "find pivot row" {
+    const allocator = std.testing.allocator;
+
+    const button0 = [_]usize{ 1, 2, 3 };
+    const button1 = [_]usize{ 0, 1 };
+    const button2 = [_]usize{ 0, 2, 3 };
+
+    var buttons = [_][]const usize{
+        &button0,
+        &button1,
+        &button2,
+    };
+
+    const joltage = [_]usize{ 200, 19, 207, 207 };
+
+    const machine = Machine{
+        .lights = 0b1110,
+        .buttons = &buttons,
+        .joltage = &joltage,
+        .allocator = allocator,
+    };
+
+    // | 0 1 1 |
+    // | 1 1 0 |
+    // | 1 0 1 |
+    // | 1 0 1 |
+    var matrix = try create_matrix(allocator, machine);
+    defer matrix.deinit();
+
+    try std.testing.expectEqual(1, matrix.find_pivot(0, 0));
+    try std.testing.expectEqual(2, matrix.find_pivot(2, 0));
+    try std.testing.expectEqual(null, matrix.find_pivot(2, 1));
 }
