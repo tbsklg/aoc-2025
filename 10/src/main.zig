@@ -16,6 +16,9 @@ pub fn main() !void {
 
     const sol_1 = try part_1(allocator, trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(allocator, trimmed);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
@@ -28,6 +31,39 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
 
         const result = try min_presses_lights(allocator, m);
         total += result;
+    }
+
+    return total;
+}
+
+fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
+    var lines = std.mem.splitScalar(u8, input, '\n');
+    var total: usize = 0;
+
+    while (lines.next()) |line| {
+        var m = try Machine.from(allocator, line);
+        defer m.deinit();
+
+        var matrix = try Matrix.fromMachine(allocator, m);
+        defer matrix.deinit();
+
+        // Find the maximum joltage value
+        var max: usize = 0;
+        for (m.joltage) |j| {
+            max = @max(max, j);
+        }
+        max += 1;
+
+        var min_val: usize = std.math.maxInt(usize);
+        const values = try allocator.alloc(usize, matrix.independents.items.len);
+        defer allocator.free(values);
+        @memset(values, 0);
+
+        dfs(&matrix, 0, values, &min_val, max);
+
+        if (min_val != std.math.maxInt(usize)) {
+            total += min_val;
+        }
     }
 
     return total;
@@ -164,344 +200,177 @@ fn parse_lights(input: []const u8) !usize {
     return acc;
 }
 
+const EPSILON = 1e-9;
+
 const Matrix = struct {
-    data: std.ArrayList(std.ArrayList(isize)),
+    data: [][]f64,
+    rows: usize,
+    cols: usize,
+    dependents: std.ArrayList(usize),
+    independents: std.ArrayList(usize),
     allocator: std.mem.Allocator,
 
-    fn init(allocator: std.mem.Allocator, m: usize, n: usize) !Matrix {
-        var data = try std.ArrayList(std.ArrayList(isize)).initCapacity(allocator, m);
+    fn fromMachine(allocator: std.mem.Allocator, machine: Machine) !Matrix {
+        const rows = machine.joltage.len;
+        const cols = machine.buttons.len;
 
-        var i: usize = 0;
-        while (i < m) : (i += 1) {
-            var row = try std.ArrayList(isize).initCapacity(allocator, n);
-            try row.appendNTimes(allocator, 0, n);
-            try data.append(allocator, row);
+        // Allocate 2D array for matrix data
+        const data = try allocator.alloc([]f64, rows);
+        for (data) |*row| {
+            row.* = try allocator.alloc(f64, cols + 1);
+            @memset(row.*, 0.0);
         }
 
-        return Matrix{
-            .data = data,
-            .allocator = allocator,
-        };
-    }
-
-    fn get(self: Matrix, row: usize, col: usize) isize {
-        return self.data.items[row].items[col];
-    }
-
-    fn set(self: *Matrix, row: usize, col: usize, value: isize) void {
-        self.data.items[row].items[col] = value;
-    }
-
-    fn swap(self: *Matrix, i: usize, j: usize) void {
-        std.mem.swap(std.ArrayList(isize), &self.data.items[i], &self.data.items[j]);
-    }
-
-    fn subtract_rows(self: *Matrix, target_row_idx: usize, source_row_idx: usize) void {
-        const num_cols = self.data.items[0].items.len;
-
-        for (0..num_cols) |col| {
-            const sub_result = self.get(source_row_idx, col) - self.get(target_row_idx, col);
-            self.set(target_row_idx, col, sub_result);
-        }
-    }
-
-    fn eliminate_below(self: *Matrix, pivot_row: usize, col: usize) void {
-        for (self.data.items[pivot_row + 1 ..], pivot_row + 1..) |row, idx| {
-            if (row.items[col] == 1) {
-                self.subtract_rows(idx, pivot_row);
+        // Add all buttons to the matrix
+        for (machine.buttons, 0..) |button, c| {
+            for (button) |r| {
+                if (r < rows) {
+                    data[r][c] = 1.0;
+                }
             }
         }
+
+        // Add joltage values to the last column
+        for (machine.joltage, 0..) |val, r| {
+            data[r][cols] = @floatFromInt(val);
+        }
+
+        var matrix = Matrix{
+            .data = data,
+            .rows = rows,
+            .cols = cols,
+            .dependents = std.ArrayList(usize){},
+            .independents = std.ArrayList(usize){},
+            .allocator = allocator,
+        };
+
+        try matrix.gaussianElimination();
+        return matrix;
     }
 
-    fn row_echelon_form(self: *Matrix) void {
-        const num_columns = self.data.items[0].items.len;
+    fn gaussianElimination(self: *Matrix) !void {
+        var pivot: usize = 0;
+        var col: usize = 0;
 
-        var row_idx: usize = 0;
-        for (0..num_columns) |col_idx| {
-            if (row_idx >= self.data.items.len) break;
+        while (pivot < self.rows and col < self.cols) {
+            // Find the best pivot row for this column
+            var best_row: usize = pivot;
+            var best_value: f64 = @abs(self.data[pivot][col]);
 
-            const pivot_row = self.find_pivot(row_idx, col_idx);
+            var r: usize = pivot + 1;
+            while (r < self.rows) : (r += 1) {
+                const val = @abs(self.data[r][col]);
+                if (val > best_value) {
+                    best_row = r;
+                    best_value = val;
+                }
+            }
 
-            if (pivot_row == null) {
+            // If the best value is zero, this is a free variable
+            if (best_value < EPSILON) {
+                try self.independents.append(self.allocator, col);
+                col += 1;
                 continue;
             }
 
-            self.swap(row_idx, pivot_row.?);
-            self.eliminate_below(row_idx, col_idx);
+            // Swap rows and mark this column as dependent
+            std.mem.swap([]f64, &self.data[pivot], &self.data[best_row]);
+            try self.dependents.append(self.allocator, col);
 
-            row_idx += 1;
+            // Normalize pivot row
+            const pivot_value = self.data[pivot][col];
+            var c: usize = col;
+            while (c <= self.cols) : (c += 1) {
+                self.data[pivot][c] /= pivot_value;
+            }
+
+            // Eliminate this column in all other rows
+            r = 0;
+            while (r < self.rows) : (r += 1) {
+                if (r != pivot) {
+                    const factor = self.data[r][col];
+                    if (@abs(factor) > EPSILON) {
+                        c = col;
+                        while (c <= self.cols) : (c += 1) {
+                            self.data[r][c] -= factor * self.data[pivot][c];
+                        }
+                    }
+                }
+            }
+
+            pivot += 1;
+            col += 1;
+        }
+
+        // Any remaining columns are free variables
+        while (col < self.cols) : (col += 1) {
+            try self.independents.append(self.allocator, col);
         }
     }
 
-    fn find_pivot(self: Matrix, row_idx: usize, col_idx: usize) ?usize {
-        for (self.data.items[row_idx..], row_idx..) |row, idx| {
-            if (row.items[col_idx] == 1) {
-                return idx;
-            }
+    fn valid(self: *const Matrix, values: []const usize) ?usize {
+        // Start with how many times we've pressed the free variables
+        var total: usize = 0;
+        for (values) |v| {
+            total += v;
         }
 
-        return null;
+        // Calculate dependent variable values based on independent variables
+        for (0..self.dependents.items.len) |row| {
+            // Calculate this dependent by subtracting the sum of the free variable pushes
+            var val: f64 = self.data[row][self.cols];
+            for (self.independents.items, 0..) |ind_col, i| {
+                val -= self.data[row][ind_col] * @as(f64, @floatFromInt(values[i]));
+            }
+
+            // We need non-negative, whole numbers for a valid solution
+            if (val < -EPSILON) {
+                return null;
+            }
+
+            const rounded = @round(val);
+            if (@abs(val - rounded) > EPSILON) {
+                return null;
+            }
+
+            total += @as(usize, @intFromFloat(rounded));
+        }
+
+        return total;
     }
 
     fn deinit(self: *Matrix) void {
-        for (self.data.items) |*row| {
-            row.deinit(self.allocator);
+        for (self.data) |row| {
+            self.allocator.free(row);
         }
-
-        self.data.deinit(self.allocator);
+        self.allocator.free(self.data);
+        self.dependents.deinit(self.allocator);
+        self.independents.deinit(self.allocator);
     }
 };
 
-fn create_matrix(allocator: std.mem.Allocator, m: Machine) !Matrix {
-    const num_rows = m.joltage.len;
-    const num_cols = m.buttons.len + 1;
-
-    var matrix = try Matrix.init(allocator, num_rows, num_cols);
-
-    for (m.buttons, 0..) |button, button_idx| {
-        for (button) |position| {
-            matrix.set(position, button_idx, 1);
+fn dfs(matrix: *const Matrix, idx: usize, values: []usize, min: *usize, max: usize) void {
+    // When we've assigned all independent variables, check if it's a valid solution
+    if (idx == matrix.independents.items.len) {
+        if (matrix.valid(values)) |total| {
+            min.* = @min(min.*, total);
         }
+        return;
     }
 
-    // Add joltage as the last column
-    for (m.joltage, 0..) |joltage, joltage_idx| {
-        matrix.set(joltage_idx, num_cols - 1, @intCast(joltage));
+    // Try different values for the current independent variable
+    var total: usize = 0;
+    for (values[0..idx]) |v| {
+        total += v;
     }
 
-    return matrix;
-}
-
-test "create matrix from machine" {
-    const allocator = std.testing.allocator;
-
-    const button0 = [_]usize{ 1, 2, 3 };
-    const button1 = [_]usize{ 0, 1 };
-    const button2 = [_]usize{ 0, 2, 3 };
-
-    var buttons = [_][]const usize{
-        &button0,
-        &button1,
-        &button2,
-    };
-
-    const joltage = [_]usize{ 200, 19, 207, 207 };
-
-    const machine = Machine{
-        .lights = 0b1110,
-        .buttons = &buttons,
-        .joltage = &joltage,
-        .allocator = allocator,
-    };
-
-    var matrix = try create_matrix(allocator, machine);
-    defer matrix.deinit();
-
-    try std.testing.expectEqual(0, matrix.get(0, 0));
-    try std.testing.expectEqual(1, matrix.get(0, 1));
-    try std.testing.expectEqual(1, matrix.get(1, 0));
-    try std.testing.expectEqual(1, matrix.get(0, 2));
-}
-
-test "row enchelon form for machine" {
-    const allocator = std.testing.allocator;
-
-    const button0 = [_]usize{ 1, 2, 3 };
-    const button1 = [_]usize{ 0, 1 };
-    const button2 = [_]usize{ 0, 2, 3 };
-
-    var buttons = [_][]const usize{
-        &button0,
-        &button1,
-        &button2,
-    };
-
-    const joltage = [_]usize{ 200, 19, 207, 207 };
-
-    const machine = Machine{
-        .lights = 0b1110,
-        .buttons = &buttons,
-        .joltage = &joltage,
-        .allocator = allocator,
-    };
-
-    // | 0 1 1 200 |
-    // | 1 1 0 19  |
-    // | 1 0 1 207 |
-    // | 1 0 1 207 |
-    var matrix = try create_matrix(allocator, machine);
-    defer matrix.deinit();
-
-    matrix.row_echelon_form();
-
-    try std.testing.expectEqual(1, matrix.get(0, 0));
-    try std.testing.expectEqual(13, matrix.get(0, 3));
-}
-
-test "swap rows in matrix" {
-    const allocator = std.testing.allocator;
-
-    const button0 = [_]usize{ 1, 2, 3 };
-    const button1 = [_]usize{ 0, 1 };
-    const button2 = [_]usize{ 0, 2, 3 };
-
-    var buttons = [_][]const usize{
-        &button0,
-        &button1,
-        &button2,
-    };
-
-    const joltage = [_]usize{ 200, 19, 207, 207 };
-
-    const machine = Machine{
-        .lights = 0b1110,
-        .buttons = &buttons,
-        .joltage = &joltage,
-        .allocator = allocator,
-    };
-
-    // | 0 1 1 |
-    // | 1 1 0 |
-    // | 1 0 1 |
-    // | 1 0 1 |
-    var matrix = try create_matrix(allocator, machine);
-    defer matrix.deinit();
-
-    // | 1 1 0 |
-    // | 0 1 1 |
-    // | 1 0 1 |
-    // | 1 0 1 |
-    matrix.swap(0, 1);
-
-    try std.testing.expectEqual(1, matrix.get(0, 0));
-    try std.testing.expectEqual(0, matrix.get(1, 0));
-}
-
-test "find pivot row" {
-    const allocator = std.testing.allocator;
-
-    const button0 = [_]usize{ 1, 2, 3 };
-    const button1 = [_]usize{ 0, 1 };
-    const button2 = [_]usize{ 0, 2, 3 };
-
-    var buttons = [_][]const usize{
-        &button0,
-        &button1,
-        &button2,
-    };
-
-    const joltage = [_]usize{ 200, 19, 207, 207 };
-
-    const machine = Machine{
-        .lights = 0b1110,
-        .buttons = &buttons,
-        .joltage = &joltage,
-        .allocator = allocator,
-    };
-
-    // | 0 1 1 |
-    // | 1 1 0 |
-    // | 1 0 1 |
-    // | 1 0 1 |
-    var matrix = try create_matrix(allocator, machine);
-    defer matrix.deinit();
-
-    try std.testing.expectEqual(1, matrix.find_pivot(0, 0));
-    try std.testing.expectEqual(2, matrix.find_pivot(2, 0));
-    try std.testing.expectEqual(null, matrix.find_pivot(2, 1));
-}
-
-test "subtract rows" {
-    const allocator = std.testing.allocator;
-
-    const button0 = [_]usize{ 1, 2, 3 };
-    const button1 = [_]usize{ 0, 1 };
-    const button2 = [_]usize{ 0, 2, 3 };
-
-    var buttons = [_][]const usize{
-        &button0,
-        &button1,
-        &button2,
-    };
-
-    const joltage = [_]usize{ 200, 19, 207, 207 };
-
-    const machine = Machine{
-        .lights = 0b1110,
-        .buttons = &buttons,
-        .joltage = &joltage,
-        .allocator = allocator,
-    };
-
-    // | 0 1 1 |
-    // | 1 1 0 |
-    // | 1 0 1 |
-    // | 1 0 1 |
-    var matrix = try create_matrix(allocator, machine);
-    defer matrix.deinit();
-
-    matrix.subtract_rows(2, 1);
-
-    try std.testing.expectEqual(0, matrix.get(2, 0));
-    try std.testing.expectEqual(-1, matrix.get(2, 1));
-    try std.testing.expectEqual(1, matrix.get(2, 2));
-
-    try std.testing.expectEqual(1, matrix.get(1, 0));
-    try std.testing.expectEqual(1, matrix.get(1, 1));
-    try std.testing.expectEqual(0, matrix.get(1, 2));
-}
-
-test "row echelon form" {
-    const allocator = std.testing.allocator;
-
-    var matrix = try Matrix.init(allocator, 4, 3);
-    defer matrix.deinit();
-
-    // Before REF:
-    // | 0 1 1 |  row 0
-    // | 1 1 0 |  row 1
-    // | 1 0 1 |  row 2
-    // | 1 0 1 |  row 3
-
-    // Row 0: [0, 1, 1]
-    matrix.set(0, 0, 0);
-    matrix.set(0, 1, 1);
-    matrix.set(0, 2, 1);
-
-    // Row 1: [1, 1, 0]
-    matrix.set(1, 0, 1);
-    matrix.set(1, 1, 1);
-    matrix.set(1, 2, 0);
-
-    // Row 2: [1, 0, 1]
-    matrix.set(2, 0, 1);
-    matrix.set(2, 1, 0);
-    matrix.set(2, 2, 1);
-
-    // Row 3: [1, 0, 1]
-    matrix.set(3, 0, 1);
-    matrix.set(3, 1, 0);
-    matrix.set(3, 2, 1);
-
-    matrix.row_echelon_form();
-
-    // | 1  1 0 |
-    // | 0  1 1 |
-    // | 0 -1 1 |
-    // | 0  0 0 |
-    try std.testing.expectEqual(1, matrix.get(0, 0));
-    try std.testing.expectEqual(1, matrix.get(0, 1));
-    try std.testing.expectEqual(0, matrix.get(0, 2));
-
-    try std.testing.expectEqual(0, matrix.get(1, 0));
-    try std.testing.expectEqual(1, matrix.get(1, 1));
-    try std.testing.expectEqual(1, matrix.get(1, 2));
-
-    try std.testing.expectEqual(0, matrix.get(2, 0));
-    try std.testing.expectEqual(-1, matrix.get(2, 1));
-    try std.testing.expectEqual(1, matrix.get(2, 2));
-
-    try std.testing.expectEqual(0, matrix.get(3, 0));
-    try std.testing.expectEqual(0, matrix.get(3, 1));
-    try std.testing.expectEqual(0, matrix.get(3, 2));
+    var val: usize = 0;
+    while (val < max) : (val += 1) {
+        // Optimization: If we ever go above our min, we can't possibly do better
+        if (total + val >= min.*) {
+            break;
+        }
+        values[idx] = val;
+        dfs(matrix, idx + 1, values, min, max);
+    }
 }
