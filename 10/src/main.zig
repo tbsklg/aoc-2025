@@ -26,8 +26,6 @@ fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
         var m = try Machine.from(allocator, line);
         defer m.deinit();
 
-        std.debug.print("Machine {any}", .{m});
-
         const result = try min_presses_lights(allocator, m);
         total += result;
     }
@@ -167,15 +165,15 @@ fn parse_lights(input: []const u8) !usize {
 }
 
 const Matrix = struct {
-    data: std.ArrayList(std.ArrayList(u8)),
+    data: std.ArrayList(std.ArrayList(isize)),
     allocator: std.mem.Allocator,
 
     fn init(allocator: std.mem.Allocator, m: usize, n: usize) !Matrix {
-        var data = try std.ArrayList(std.ArrayList(u8)).initCapacity(allocator, m);
+        var data = try std.ArrayList(std.ArrayList(isize)).initCapacity(allocator, m);
 
         var i: usize = 0;
         while (i < m) : (i += 1) {
-            var row = try std.ArrayList(u8).initCapacity(allocator, n);
+            var row = try std.ArrayList(isize).initCapacity(allocator, n);
             try row.appendNTimes(allocator, 0, n);
             try data.append(allocator, row);
         }
@@ -186,31 +184,31 @@ const Matrix = struct {
         };
     }
 
-    fn get(self: Matrix, row: usize, col: usize) u8 {
+    fn get(self: Matrix, row: usize, col: usize) isize {
         return self.data.items[row].items[col];
     }
 
-    fn set(self: *Matrix, row: usize, col: usize, value: u8) void {
+    fn set(self: *Matrix, row: usize, col: usize, value: isize) void {
         self.data.items[row].items[col] = value;
     }
 
     fn swap(self: *Matrix, i: usize, j: usize) void {
-        std.mem.swap(std.ArrayList(u8), &self.data.items[i], &self.data.items[j]);
+        std.mem.swap(std.ArrayList(isize), &self.data.items[i], &self.data.items[j]);
     }
 
-    fn xor_rows(self: *Matrix, target_row_idx: usize, source_row_idx: usize) void {
+    fn subtract_rows(self: *Matrix, target_row_idx: usize, source_row_idx: usize) void {
         const num_cols = self.data.items[0].items.len;
 
         for (0..num_cols) |col| {
-            const xor_result = self.get(target_row_idx, col) ^ self.get(source_row_idx, col);
-            self.set(target_row_idx, col, xor_result);
+            const sub_result = self.get(source_row_idx, col) - self.get(target_row_idx, col);
+            self.set(target_row_idx, col, sub_result);
         }
     }
 
     fn eliminate_below(self: *Matrix, pivot_row: usize, col: usize) void {
         for (self.data.items[pivot_row + 1 ..], pivot_row + 1..) |row, idx| {
             if (row.items[col] == 1) {
-                self.xor_rows(idx, pivot_row);
+                self.subtract_rows(idx, pivot_row);
             }
         }
     }
@@ -255,15 +253,20 @@ const Matrix = struct {
 };
 
 fn create_matrix(allocator: std.mem.Allocator, m: Machine) !Matrix {
-    const num_positions = m.joltage.len;
-    const num_buttons = m.buttons.len;
+    const num_rows = m.joltage.len;
+    const num_cols = m.buttons.len + 1;
 
-    var matrix = try Matrix.init(allocator, num_positions, num_buttons);
+    var matrix = try Matrix.init(allocator, num_rows, num_cols);
 
     for (m.buttons, 0..) |button, button_idx| {
         for (button) |position| {
             matrix.set(position, button_idx, 1);
         }
+    }
+
+    // Add joltage as the last column
+    for (m.joltage, 0..) |joltage, joltage_idx| {
+        matrix.set(joltage_idx, num_cols - 1, @intCast(joltage));
     }
 
     return matrix;
@@ -298,6 +301,41 @@ test "create matrix from machine" {
     try std.testing.expectEqual(1, matrix.get(0, 1));
     try std.testing.expectEqual(1, matrix.get(1, 0));
     try std.testing.expectEqual(1, matrix.get(0, 2));
+}
+
+test "row enchelon form for machine" {
+    const allocator = std.testing.allocator;
+
+    const button0 = [_]usize{ 1, 2, 3 };
+    const button1 = [_]usize{ 0, 1 };
+    const button2 = [_]usize{ 0, 2, 3 };
+
+    var buttons = [_][]const usize{
+        &button0,
+        &button1,
+        &button2,
+    };
+
+    const joltage = [_]usize{ 200, 19, 207, 207 };
+
+    const machine = Machine{
+        .lights = 0b1110,
+        .buttons = &buttons,
+        .joltage = &joltage,
+        .allocator = allocator,
+    };
+
+    // | 0 1 1 200 |
+    // | 1 1 0 19  |
+    // | 1 0 1 207 |
+    // | 1 0 1 207 |
+    var matrix = try create_matrix(allocator, machine);
+    defer matrix.deinit();
+
+    matrix.row_echelon_form();
+
+    try std.testing.expectEqual(1, matrix.get(0, 0));
+    try std.testing.expectEqual(13, matrix.get(0, 3));
 }
 
 test "swap rows in matrix" {
@@ -373,7 +411,7 @@ test "find pivot row" {
     try std.testing.expectEqual(null, matrix.find_pivot(2, 1));
 }
 
-test "xor rows" {
+test "subtract rows" {
     const allocator = std.testing.allocator;
 
     const button0 = [_]usize{ 1, 2, 3 };
@@ -395,7 +433,6 @@ test "xor rows" {
         .allocator = allocator,
     };
 
-    // Create same matrix as before
     // | 0 1 1 |
     // | 1 1 0 |
     // | 1 0 1 |
@@ -403,10 +440,10 @@ test "xor rows" {
     var matrix = try create_matrix(allocator, machine);
     defer matrix.deinit();
 
-    matrix.xor_rows(2, 1);
+    matrix.subtract_rows(2, 1);
 
     try std.testing.expectEqual(0, matrix.get(2, 0));
-    try std.testing.expectEqual(1, matrix.get(2, 1));
+    try std.testing.expectEqual(-1, matrix.get(2, 1));
     try std.testing.expectEqual(1, matrix.get(2, 2));
 
     try std.testing.expectEqual(1, matrix.get(1, 0));
@@ -414,58 +451,56 @@ test "xor rows" {
     try std.testing.expectEqual(0, matrix.get(1, 2));
 }
 
-test "row echelon form - binary matrix" {
+test "row echelon form" {
     const allocator = std.testing.allocator;
-    
+
     var matrix = try Matrix.init(allocator, 4, 3);
     defer matrix.deinit();
-    
+
     // Before REF:
     // | 0 1 1 |  row 0
     // | 1 1 0 |  row 1
     // | 1 0 1 |  row 2
     // | 1 0 1 |  row 3
-    
+
     // Row 0: [0, 1, 1]
     matrix.set(0, 0, 0);
     matrix.set(0, 1, 1);
     matrix.set(0, 2, 1);
-    
+
     // Row 1: [1, 1, 0]
     matrix.set(1, 0, 1);
     matrix.set(1, 1, 1);
     matrix.set(1, 2, 0);
-    
+
     // Row 2: [1, 0, 1]
     matrix.set(2, 0, 1);
     matrix.set(2, 1, 0);
     matrix.set(2, 2, 1);
-    
+
     // Row 3: [1, 0, 1]
     matrix.set(3, 0, 1);
     matrix.set(3, 1, 0);
     matrix.set(3, 2, 1);
-    
+
     matrix.row_echelon_form();
-    
-    // After REF (expected result):
-    // | 1 1 0 |  
-    // | 0 1 1 |  
-    // | 0 0 0 |  
-    // | 0 0 0 |  
-    
+
+    // | 1  1 0 |
+    // | 0  1 1 |
+    // | 0 -1 1 |
+    // | 0  0 0 |
     try std.testing.expectEqual(1, matrix.get(0, 0));
     try std.testing.expectEqual(1, matrix.get(0, 1));
     try std.testing.expectEqual(0, matrix.get(0, 2));
-    
+
     try std.testing.expectEqual(0, matrix.get(1, 0));
     try std.testing.expectEqual(1, matrix.get(1, 1));
     try std.testing.expectEqual(1, matrix.get(1, 2));
-    
+
     try std.testing.expectEqual(0, matrix.get(2, 0));
-    try std.testing.expectEqual(0, matrix.get(2, 1));
-    try std.testing.expectEqual(0, matrix.get(2, 2));
-    
+    try std.testing.expectEqual(-1, matrix.get(2, 1));
+    try std.testing.expectEqual(1, matrix.get(2, 2));
+
     try std.testing.expectEqual(0, matrix.get(3, 0));
     try std.testing.expectEqual(0, matrix.get(3, 1));
     try std.testing.expectEqual(0, matrix.get(3, 2));
