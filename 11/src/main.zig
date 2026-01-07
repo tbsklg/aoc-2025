@@ -58,7 +58,7 @@ fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
     }
     defer devices.deinit();
 
-    return svr_fft * fft_dac * dac_out; 
+    return svr_fft * fft_dac * dac_out;
 }
 
 fn find_paths(allocator: std.mem.Allocator, current: []const u8, target: []const u8, devices: std.StringHashMap([][]const u8), distances: *std.StringHashMap(usize)) !usize {
