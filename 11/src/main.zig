@@ -17,65 +17,68 @@ pub fn main() !void {
 
     const sol_1 = try part_1(allocator, trimmed);
     std.debug.print("Solution part 1: {d}\n", .{sol_1});
+
+    const sol_2 = try part_2(allocator, trimmed);
+    std.debug.print("Solution part 2: {d}\n", .{sol_2});
 }
 
 fn part_1(allocator: std.mem.Allocator, input: []const u8) !usize {
     var devices = try parse_devices(allocator, input);
+    var distances = std.StringHashMap(usize).init(allocator);
+    defer distances.deinit();
+
+    const paths = find_paths(allocator, "you", "out", devices, &distances);
+
     var iterator = devices.valueIterator();
-
-    const count = try bfs(allocator, devices);
-
     while (iterator.next()) |value| {
         defer allocator.free(value.*);
     }
     defer devices.deinit();
 
-    return count;
+    return paths;
 }
 
-fn bfs(allocator: std.mem.Allocator, devices: std.StringHashMap([][]const u8)) !usize {
-    var queue = std.ArrayList(struct { std.ArrayList([]const u8) }){};
-    defer {
-        for (queue.items) |*item| {
-            item.@"0".deinit(allocator);
-        }
-        queue.deinit(allocator);
+fn part_2(allocator: std.mem.Allocator, input: []const u8) !usize {
+    var devices = try parse_devices(allocator, input);
+    var distances = std.StringHashMap(usize).init(allocator);
+    defer distances.deinit();
+
+    const svr_fft = try find_paths(allocator, "svr", "fft", devices, &distances);
+    distances.clearRetainingCapacity();
+
+    const fft_dac = try find_paths(allocator, "fft", "dac", devices, &distances);
+    distances.clearRetainingCapacity();
+
+    const dac_out = try find_paths(allocator, "dac", "out", devices, &distances);
+    distances.clearRetainingCapacity();
+
+    var iterator = devices.valueIterator();
+    while (iterator.next()) |value| {
+        defer allocator.free(value.*);
+    }
+    defer devices.deinit();
+
+    return svr_fft * fft_dac * dac_out;
+}
+
+fn find_paths(allocator: std.mem.Allocator, current: []const u8, target: []const u8, devices: std.StringHashMap([][]const u8), distances: *std.StringHashMap(usize)) !usize {
+    if (std.mem.eql(u8, current, target)) {
+        return 1;
     }
 
-    var start = std.ArrayList([]const u8){};
+    const neighbors = devices.get(current) orelse return 0;
 
-    try start.append(allocator, "you");
-    try queue.append(allocator, .{start});
-
-    var count: usize = 0;
-
-    while (queue.items.len > 0) {
-        var head = queue.orderedRemove(0);
-        const current = head.@"0".getLast();
-
-        if (std.mem.eql(u8, current, "out")) {
-            head.@"0".deinit(allocator);
-            count += 1;
-            continue;
-        }
-
-        const targets = devices.get(current) orelse {
-            head.@"0".deinit(allocator);
-            continue;
+    var sum: usize = 0;
+    for (neighbors) |neighbor| {
+        const neighbor_paths = distances.get(neighbor) orelse blk: {
+            const paths = try find_paths(allocator, neighbor, target, devices, distances);
+            try distances.put(neighbor, paths);
+            break :blk paths;
         };
-
-        for (targets) |target| {
-            var next_path = std.ArrayList([]const u8){};
-            try next_path.appendSlice(allocator, head.@"0".items);
-            try next_path.append(allocator, target);
-
-            try queue.append(allocator, .{next_path});
-        }
-
-        head.@"0".deinit(allocator);
+        sum += neighbor_paths;
     }
 
-    return count;
+    return sum;
 }
 
 fn parse_devices(allocator: std.mem.Allocator, input: []const u8) !std.StringHashMap([][]const u8) {
