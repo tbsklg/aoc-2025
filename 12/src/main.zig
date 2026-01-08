@@ -21,24 +21,13 @@ pub fn main() !void {
 fn part_1(input: []const u8) !usize {
     var lines = std.mem.splitScalar(u8, input, '\n');
 
-    const skip = 30;
-    var curr: usize = 0;
-
-    while (curr < skip) {
+    for (0..30) |_| {
         _ = lines.next();
-        curr += 1;
     }
 
     var count: usize = 0;
     while (lines.next()) |line| {
-        var region = try Region.from(line);
-
-        var needed_area: usize = 0;
-        for (region.present_counts) |presents_count| {
-            needed_area += presents_count * 9;
-        }
-
-        if (region.area() >= needed_area) {
+        if ((try Region.from(line)).fits()) {
             count += 1;
         }
     }
@@ -74,7 +63,19 @@ const Region = struct {
         };
     }
 
-    fn area(self: *Region) usize {
+    fn required_area(self: *const Region) usize {
+        var total: usize = 0;
+        for (self.present_counts) |count| {
+            total += count * 9;
+        }
+        return total;
+    }
+
+    fn area(self: *const Region) usize {
         return self.width * self.length;
+    }
+
+    fn fits(self: *const Region) bool {
+        return self.area() >= self.required_area();
     }
 };
